@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}{{ alert.alert_id }} · NetGuard IoT{% endblock %}
+{% block content %}
+
+<a href="{{ url_for('dashboard') }}" class="back-link">&larr; Back to dashboard</a>
+
+<div class="page-header">
+  <h1 class="mono">{{ alert.alert_id }}</h1>
+  <span class="badge badge-{{ alert.severity_label|lower }} large">{{ alert.severity_label }} Severity</span>
+</div>
+
+<div class="detail-grid">
+  <div class="detail-card">
+    <h3>Device</h3>
+    <table class="kv-table">
+      <tr><td>Device ID</td><td>{{ alert.device.device_id }}</td></tr>
+      <tr><td>Type</td><td>{{ alert.device.device_type }}</td></tr>
+      <tr><td>Vendor</td><td>{{ alert.device.vendor }}</td></tr>
+      <tr><td>IP Address</td><td>{{ alert.device.ip_address }}</td></tr>
+      <tr><td>MAC Address</td><td>{{ alert.device.mac_address }}</td></tr>
+      <tr><td>First Seen</td><td>{{ alert.device.first_seen }}</td></tr>
+    </table>
+  </div>
+
+  <div class="detail-card">
+    <h3>Detection</h3>
+    <table class="kv-table">
+      <tr><td>Alert Type</td><td>{{ alert.alert_type.replace('_',' ')|title }}</td></tr>
+      <tr><td>Anomaly Score</td><td class="mono">{{ alert.anomaly_score }}</td></tr>
+      <tr><td>Detected At</td><td class="mono">{{ alert.detected_timestamp }}</td></tr>
+    </table>
+  </div>
+
+  <div class="detail-card">
+    <h3>MITRE ATT&amp;CK Mapping</h3>
+    <table class="kv-table">
+      <tr><td>Technique</td><td class="mono">{{ alert.attack_info.technique_id }} — {{ alert.attack_info.technique_name }}</td></tr>
+      <tr><td>Tactic</td><td>{{ alert.attack_info.tactic }}</td></tr>
+    </table>
+    <p class="attack-desc">{{ alert.attack_info.description }}</p>
+    <strong>Recommended Actions</strong>
+    <ul>
+      {% for action in alert.attack_info.recommended_actions %}
+      <li>{{ action }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+
+  <div class="detail-card">
+    <h3>Detection Features</h3>
+    <table class="kv-table">
+      {% for key, value in alert.detection_features.items() %}
+      <tr><td>{{ key.replace('_',' ')|title }}</td><td class="mono">{{ value }}</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+
+<h3 class="section-title">Timeline</h3>
+<div class="timeline">
+  {% for event in alert.timeline %}
+  <div class="timeline-item">
+    <div class="t-time mono">{{ event.time }}</div>
+    <div class="t-event">{{ event.event }}</div>
+  </div>
+  {% endfor %}
+</div>
+
+<h3 class="section-title">Evidence</h3>
+<div class="evidence-box mono">
+  PCAP FILE: {{ alert.evidence.pcap_file }}<br>
+  SHA-256: {{ alert.evidence.pcap_sha256 }}<br>
+  CHAIN OF CUSTODY ID: {{ alert.evidence.chain_of_custody_id }}<br>
+  CAPTURED BY: {{ alert.evidence.captured_by }}
+</div>
+
+<div class="report-action">
+  <a class="btn" href="{{ url_for('alert_report', alert_id=alert.alert_id) }}">
+    {% if alert.report_generated %}Download Incident Report (PDF){% else %}Generate Incident Report (PDF){% endif %}
+  </a>
+</div>
+
+{% endblock %}
