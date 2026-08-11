@@ -1,4 +1,27 @@
 {
+  "signature_blacklisted_ip": {
+    "technique_id": "T1071",
+    "technique_name": "Application Layer Protocol (Known Malicious IP)",
+    "tactic": "Command and Control",
+    "description": "Traffic matches a known malicious IP signature (IoC). This indicates direct communication with a known threat actor infrastructure.",
+    "recommended_actions": [
+      "Block IP immediately",
+      "Quarantine device",
+      "Investigate other devices that may have communicated with this IP"
+    ],
+    "severity_weight": 1.0
+  },
+  "signature_suspicious_port": {
+    "technique_id": "T1043",
+    "technique_name": "Commonly Used Port (Suspicious)",
+    "tactic": "Command and Control",
+    "description": "Traffic matches a known suspicious port signature (e.g., 4444 for Metasploit).",
+    "recommended_actions": [
+      "Block port at firewall",
+      "Investigate device for unauthorized services"
+    ],
+    "severity_weight": 0.8
+  },
   "brute_force_login": {
     "technique_id": "T1110",
     "technique_name": "Brute Force",

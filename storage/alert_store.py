@@ -20,6 +20,8 @@ from storage.mongo_client import get_database
 _db, _mode = get_database()
 _alerts = _db["alerts"]
 _logs = _db["traffic_logs"]
+_mitigations = _db["mitigations"]
+_blocked_ips = _db["blocked_ips"]
 
 
 def storage_mode() -> str:
@@ -87,6 +89,38 @@ def mark_report_generated(alert_id: str, report_path: str, report_hash: str):
 
 def get_recent_logs(limit: int = 50):
     return list(_logs.find({}, {"_id": 0}).sort("timestamp", -1).limit(limit))
+
+
+def insert_mitigation(mitigation_record: dict):
+    _mitigations.insert_one(mitigation_record)
+
+
+def get_mitigations(limit: int = 50):
+    return list(_mitigations.find({}, {"_id": 0}).sort("timestamp", -1).limit(limit))
+
+
+def get_mitigations_for_alert(alert_id: str):
+    return list(_mitigations.find({"alert_id": alert_id}, {"_id": 0}).sort("timestamp", -1))
+
+
+def add_blocked_ip(ip: str, reason: str):
+    _blocked_ips.update_one(
+        {"ip": ip},
+        {"$set": {"ip": ip, "reason": reason, "timestamp": datetime.now(timezone.utc)}},
+        upsert=True
+    )
+
+
+def remove_blocked_ip(ip: str):
+    _blocked_ips.delete_one({"ip": ip})
+
+
+def get_blocked_ips():
+    return list(_blocked_ips.find({}, {"_id": 0}).sort("timestamp", -1))
+
+
+def is_ip_blocked(ip: str) -> bool:
+    return _blocked_ips.find_one({"ip": ip}) is not None
 
 
 def get_stats():
