@@ -66,6 +66,32 @@
   {% endfor %}
 </div>
 
+{% if mitigations %}
+<h3 class="section-title" style="color: #f4415e;">IPS Mitigation Actions</h3>
+<div class="evidence-box">
+  <table class="alert-table">
+    <thead>
+      <tr>
+        <th>Timestamp</th>
+        <th>Action</th>
+        <th>Target</th>
+        <th>Description</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for m in mitigations %}
+      <tr>
+        <td class="mono small">{{ m.timestamp }}</td>
+        <td><strong>{{ m.action }}</strong></td>
+        <td class="mono">{{ m.target }}</td>
+        <td>{{ m.description }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
 <h3 class="section-title">Evidence</h3>
 <div class="evidence-box mono">
   PCAP FILE: {{ alert.evidence.pcap_file }}<br>

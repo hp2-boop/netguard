@@ -100,6 +100,72 @@
   <span class="results-count" id="resultsCount">{{ alerts|length }} results</span>
 </div>
 
+{% if mitigations %}
+<div class="feed-panel" style="margin-bottom: 24px; border-top: 4px solid #f4415e;">
+  <div class="feed-header">
+    <div>
+      <h3>Recent IPS Mitigations</h3>
+      <p class="panel-sub">Automated actions taken by Intrusion Prevention System</p>
+    </div>
+  </div>
+  <table class="alert-table">
+    <thead>
+      <tr>
+        <th>Timestamp</th>
+        <th>Action</th>
+        <th>Target</th>
+        <th>Description</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for m in mitigations %}
+      <tr>
+        <td class="mono small">{{ m.timestamp }}</td>
+        <td><strong style="color: #f4415e;">{{ m.action }}</strong></td>
+        <td class="mono">{{ m.target }}</td>
+        <td>{{ m.description }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if blocked_ips %}
+<div class="feed-panel" style="margin-bottom: 24px; border-top: 4px solid #f2c14e;">
+  <div class="feed-header">
+    <div>
+      <h3>Active Blocklist</h3>
+      <p class="panel-sub">Traffic from these IPs is currently being dropped</p>
+    </div>
+  </div>
+  <table class="alert-table">
+    <thead>
+      <tr>
+        <th>IP Address</th>
+        <th>Reason</th>
+        <th>Blocked At</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for b in blocked_ips %}
+      <tr>
+        <td class="mono"><strong>{{ b.ip }}</strong></td>
+        <td>{{ b.reason }}</td>
+        <td class="mono small">{{ b.timestamp }}</td>
+        <td>
+          <form method="POST" action="{{ url_for('unblock', ip=b.ip) }}" style="display: inline;">
+            <button type="submit" class="btn-small" style="background: transparent; border: 1px solid #7b849c; color: #7b849c;">Unblock</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
 <div class="feed-panel">
   <div class="feed-header">
     <div>
