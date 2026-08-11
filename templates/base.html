@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}NetGuard IoT{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+</head>
+<body>
+  <nav class="topnav">
+    <div class="brand">
+      <span class="brand-mark">&#9671;</span>NETGUARD <span class="brand-sub">IoT Anomaly Detection</span>
+    </div>
+    <div class="nav-links">
+      <a href="{{ url_for('dashboard') }}">Dashboard</a>
+      <a href="{{ url_for('logs') }}">Traffic Logs</a>
+    </div>
+  </nav>
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+  <div class="footer-bar">
+    NetGuard IoT &middot; Flask + IsolationForest + MongoDB <span class="dot online" style="display:inline-block;"></span> {% block footer_status %}System operational{% endblock %}
+  </div>
+</body>
+</html>

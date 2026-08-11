@@ -1,0 +1,244 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · NetGuard IoT{% endblock %}
+{% block footer_status %}{{ stats.storage_mode|upper }} storage &middot; {{ stats.total_windows_analyzed }} windows analyzed{% endblock %}
+{% block content %}
+
+<div class="stat-grid">
+  <div class="stat-card c-red">
+    <div class="stat-label">Total Alerts</div>
+    <div class="stat-value c-red">{{ stats.total_alerts }}</div>
+  </div>
+  <div class="stat-card c-blue">
+    <div class="stat-label">Port Scans</div>
+    <div class="stat-value c-blue">{{ stats.by_type.port_scan }}</div>
+  </div>
+  <div class="stat-card c-yellow">
+    <div class="stat-label">Traffic Spikes</div>
+    <div class="stat-value c-yellow">{{ stats.by_type.ddos_traffic }}</div>
+  </div>
+  <div class="stat-card c-orange">
+    <div class="stat-label">Suspicious Ports</div>
+    <div class="stat-value c-orange">{{ stats.suspicious_ports_count }}</div>
+  </div>
+</div>
+
+<div class="panel-row">
+  <div class="panel">
+    <h3>Alert Volume</h3>
+    <p class="panel-sub">Cumulative alerts over session</p>
+    {% if stats.timeline_series %}
+    <div class="chart-wrap"><canvas id="volumeChart"></canvas></div>
+    {% else %}
+    <div class="chart-empty">
+      <div class="chart-empty-icon">&#9675;</div>
+      No data yet
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="panel">
+    <h3>Attack Distribution</h3>
+    <p class="panel-sub">By alert type</p>
+    {% if stats.total_alerts > 0 %}
+    <div class="chart-wrap"><canvas id="distChart"></canvas></div>
+    {% else %}
+    <div class="chart-empty">
+      <div class="chart-empty-icon">&#9675;</div>
+      No data yet
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="panel">
+    <h3>System Health</h3>
+    <p class="panel-sub">&nbsp;</p>
+    <div class="health-item">
+      <span>Backend API</span>
+      <span class="health-status online"><span class="dot online"></span>ONLINE</span>
+    </div>
+    <div class="health-item">
+      <span>MongoDB {{ 'Atlas' if stats.storage_mode == 'real' else '(mock)' }}</span>
+      {% if stats.storage_mode == 'real' %}
+      <span class="health-status online"><span class="dot online"></span>ONLINE</span>
+      {% else %}
+      <span class="health-status offline"><span class="dot offline"></span>IN-MEMORY</span>
+      {% endif %}
+    </div>
+    <div class="health-item">
+      <span>Detection Engine</span>
+      <span class="health-status online"><span class="dot online"></span>ONLINE</span>
+    </div>
+    <div class="health-item">
+      <span>Traffic Source</span>
+      <span class="health-status online"><span class="dot online"></span>ONLINE</span>
+    </div>
+    <div class="session-box">
+      <div class="stat-label">Session Alerts</div>
+      <div class="stat-value">{{ stats.total_alerts }}</div>
+    </div>
+  </div>
+</div>
+
+<div class="simulate-box">
+  <form method="POST" action="{{ url_for('simulate') }}" class="simulate-form">
+    <div>
+      <strong style="font-size:13px;">Run Detection Simulation</strong>
+      <p class="hint" style="margin-top:4px; max-width: 480px;">Generates synthetic IoT traffic (mostly normal, with injected attacks) and runs it through detection &rarr; classification &rarr; ATT&amp;CK mapping &rarr; storage.</p>
+    </div>
+    <label>Normal windows <input type="number" name="n_normal" value="15" min="1" max="100"></label>
+    <label>Injected attacks <input type="number" name="n_attacks" value="3" min="0" max="20"></label>
+    <button type="submit">Run Simulation</button>
+  </form>
+</div>
+
+<div class="filter-bar">
+  <input type="text" id="ipSearch" placeholder="Search IP address...">
+  <button class="filter-btn active" data-filter="all">All</button>
+  <button class="filter-btn" data-filter="port_scan">Port Scan</button>
+  <button class="filter-btn" data-filter="ddos_traffic">Traffic Spike</button>
+  <button class="filter-btn" data-filter="brute_force_login,c2_communication">Suspicious Port Access</button>
+  <span class="results-count" id="resultsCount">{{ alerts|length }} results</span>
+</div>
+
+<div class="feed-panel">
+  <div class="feed-header">
+    <div>
+      <h3>Live Alert Feed</h3>
+      <p class="panel-sub">{{ stats.total_alerts }} alert{{ 's' if stats.total_alerts != 1 else '' }} this session</p>
+    </div>
+    <a class="btn-export" href="{{ url_for('export_csv') }}">Export Report</a>
+  </div>
+
+  {% if alerts %}
+  <table class="alert-table" id="alertTable">
+    <thead>
+      <tr>
+        <th>Severity</th>
+        <th>Type</th>
+        <th>Source IP</th>
+        <th>Details (ATT&amp;CK)</th>
+        <th>Timestamp</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for alert in alerts %}
+      <tr data-type="{{ alert.alert_type }}" data-ip="{{ alert.device.ip_address }}">
+        <td><span class="badge badge-{{ alert.severity_label|lower }}">{{ alert.severity_label }}</span></td>
+        <td>{{ alert.alert_type.replace('_', ' ')|title }}</td>
+        <td class="mono">{{ alert.device.ip_address }}</td>
+        <td class="mono small">{{ alert.attack_info.technique_id }} — {{ alert.attack_info.technique_name }}</td>
+        <td class="mono small">{{ alert.detected_timestamp }}</td>
+        <td>
+          <a href="{{ url_for('alert_detail', alert_id=alert.alert_id) }}" class="btn-small">View</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-state-block">
+    <div class="empty-state-icon">&#9675;</div>
+    <div class="empty-state-title">No alerts detected</div>
+    <div class="empty-state-sub">Network looks clean — run a simulation above to generate traffic</div>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+  // ---- Filter bar: client-side filtering of the live alert feed table ----
+  const searchInput = document.getElementById('ipSearch');
+  const filterBtns = document.querySelectorAll('.filter-btn');
+  const rows = document.querySelectorAll('#alertTable tbody tr');
+  const resultsCount = document.getElementById('resultsCount');
+  let activeFilter = 'all';
+
+  function applyFilters() {
+    const query = (searchInput ? searchInput.value : '').trim().toLowerCase();
+    let visible = 0;
+    rows.forEach(row => {
+      const type = row.dataset.type;
+      const ip = row.dataset.ip.toLowerCase();
+      const typeMatch = activeFilter === 'all' || activeFilter.split(',').includes(type);
+      const ipMatch = !query || ip.includes(query);
+      const show = typeMatch && ipMatch;
+      row.style.display = show ? '' : 'none';
+      if (show) visible++;
+    });
+    if (resultsCount) resultsCount.textContent = visible + ' results';
+  }
+
+  if (searchInput) searchInput.addEventListener('input', applyFilters);
+  filterBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      filterBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      activeFilter = btn.dataset.filter;
+      applyFilters();
+    });
+  });
+
+  // ---- Charts ----
+  Chart.defaults.color = '#7b849c';
+  Chart.defaults.font.family = "'SF Mono', 'Consolas', monospace";
+  Chart.defaults.font.size = 11;
+  Chart.defaults.devicePixelRatio = window.devicePixelRatio > 1 ? window.devicePixelRatio : 2;
+
+  {% if stats.timeline_series %}
+  new Chart(document.getElementById('volumeChart'), {
+    type: 'line',
+    data: {
+      labels: {{ stats.timeline_series | map(attribute='time') | list | tojson }},
+      datasets: [{
+        data: {{ stats.timeline_series | map(attribute='count') | list | tojson }},
+        borderColor: '#f0883e',
+        backgroundColor: 'rgba(240,136,62,0.08)',
+        fill: true,
+        tension: 0.3,
+        pointRadius: 2,
+        pointBackgroundColor: '#f0883e',
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { color: 'rgba(148,163,209,0.06)' }, ticks: { maxTicksLimit: 6 } },
+        y: { grid: { color: 'rgba(148,163,209,0.06)' }, beginAtZero: true, ticks: { precision: 0 } }
+      }
+    }
+  });
+  {% endif %}
+
+  {% if stats.total_alerts > 0 %}
+  const distLabels = [];
+  const distValues = [];
+  const distRaw = {{ stats.by_type | tojson }};
+  const labelMap = {
+    'port_scan': 'Port Scan', 'ddos_traffic': 'Traffic Spike',
+    'brute_force_login': 'Brute Force', 'c2_communication': 'C2 Comms',
+    'unclassified_anomaly': 'Unclassified'
+  };
+  for (const [key, val] of Object.entries(distRaw)) {
+    if (val > 0) { distLabels.push(labelMap[key] || key); distValues.push(val); }
+  }
+  new Chart(document.getElementById('distChart'), {
+    type: 'doughnut',
+    data: {
+      labels: distLabels,
+      datasets: [{
+        data: distValues,
+        backgroundColor: ['#5b7cf5', '#f2c14e', '#f4415e', '#f0883e', '#7b849c'],
+        borderColor: '#0c1120',
+        borderWidth: 3,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, padding: 12 } } }
+    }
+  });
+  {% endif %}
+</script>
+
+{% endblock %}
