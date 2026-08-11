@@ -1,22 +1,5 @@
-"""
-pipeline.py
-
-The core orchestrator: takes one traffic window (device + packets), runs
-it through the ML anomaly detector, and if flagged:
-  1. Classifies the attack type (rule_classifier)
-  2. Maps it to a MITRE ATT&CK technique (attack_mapping.json)
-  3. Computes a combined severity score
-  4. Builds a simple timeline + mock evidence record (pcap hash placeholder --
-     wire this to your real pcap-saving code in a live deployment)
-  5. Stores the alert in MongoDB (storage/alert_store.py)
-
-Every analyzed window (anomalous or not) is also logged to the
-traffic_logs collection for a full audit trail.
-"""
-
 import json
 import hashlib
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -24,133 +7,223 @@ from ml.detector import AnomalyDetector
 from intelligence.rule_classifier import classify_attack_type
 from storage import alert_store
 
-ATTACK_MAP_PATH = Path(__file__).parent / "intelligence" / "attack_mapping.json"
-with open(ATTACK_MAP_PATH) as f:
-    ATTACK_MAP = json.load(f)
 
-_detector = None
+ATTACK_MAPPING_FILE = (
+    Path(__file__).parent / "intelligence" / "attack_mapping.json"
+)
 
-
-def get_detector():
-    global _detector
-    if _detector is None:
-        _detector = AnomalyDetector()
-    return _detector
+with open(ATTACK_MAPPING_FILE) as file:
+    ATTACK_MAPPING = json.load(file)
 
 
-def _map_to_attack(alert_type: str) -> dict:
-    if alert_type in ATTACK_MAP:
-        return ATTACK_MAP[alert_type]
+_detector_instance = None
+
+
+def get_anomaly_detector():
+    global _detector_instance
+
+    if _detector_instance is None:
+        _detector_instance = AnomalyDetector()
+
+    return _detector_instance
+
+
+def find_attack_information(alert_type: str) -> dict:
+    if alert_type in ATTACK_MAPPING:
+        return ATTACK_MAPPING[alert_type]
+
     return {
         "technique_id": "N/A",
         "technique_name": "Unclassified Behavior",
         "tactic": "Unknown",
-        "description": ("This anomaly does not match any known rule pattern. "
-                         "Manual analyst review recommended."),
-        "recommended_actions": ["Escalate to human analyst for manual classification"],
+        "description": (
+            "This anomaly does not match any known rule pattern. "
+            "Manual analyst review recommended."
+        ),
+        "recommended_actions": [
+            "Escalate to human analyst for manual classification"
+        ],
         "severity_weight": 0.5,
     }
 
 
-def _compute_severity(anomaly_score: float, attack_weight: float):
-    combined = (anomaly_score * 0.6) + (attack_weight * 0.4)
-    if combined >= 0.8:
-        return "Critical", combined
-    elif combined >= 0.6:
-        return "High", combined
-    elif combined >= 0.4:
-        return "Medium", combined
-    return "Low", combined
+def calculate_severity(anomaly_score: float, attack_weight: float):
+    combined_score = (
+        (anomaly_score * 0.6)
+        + (attack_weight * 0.4)
+    )
+
+    if combined_score >= 0.8:
+        return "Critical", combined_score
+
+    elif combined_score >= 0.6:
+        return "High", combined_score
+
+    elif combined_score >= 0.4:
+        return "Medium", combined_score
+
+    return "Low", combined_score
 
 
-def _build_timeline(device: dict, packets: list, alert_type: str):
+def create_timeline(device: dict, packets: list, alert_type: str):
     if not packets:
         return []
-    first_t = datetime.fromtimestamp(packets[0]["timestamp"], tz=timezone.utc)
-    last_t = datetime.fromtimestamp(packets[-1]["timestamp"], tz=timezone.utc)
+
+    first_timestamp = datetime.fromtimestamp(
+        packets[0]["timestamp"],
+        tz=timezone.utc
+    )
+
+    last_timestamp = datetime.fromtimestamp(
+        packets[-1]["timestamp"],
+        tz=timezone.utc
+    )
+
     return [
-        {"time": first_t.isoformat(), "event": f"First packet observed from {device['device_id']}"},
-        {"time": last_t.isoformat(), "event": f"Traffic window closed ({len(packets)} packets analyzed)"},
-        {"time": datetime.now(timezone.utc).isoformat(),
-         "event": f"Anomaly detector flagged window as '{alert_type}'"},
+        {
+            "time": first_timestamp.isoformat(),
+            "event": (
+                f"First packet observed from "
+                f"{device['device_id']}"
+            ),
+        },
+        {
+            "time": last_timestamp.isoformat(),
+            "event": (
+                f"Traffic window closed "
+                f"({len(packets)} packets analyzed)"
+            ),
+        },
+        {
+            "time": datetime.now(timezone.utc).isoformat(),
+            "event": (
+                f"Anomaly detector flagged window as "
+                f"'{alert_type}'"
+            ),
+        },
     ]
 
 
-def _build_evidence(alert_id: str, packets: list):
+def generate_evidence(alert_id: str, packets: list):
     """
-    In a real deployment, this is where you'd save the actual pcap segment
-    to disk/cloud storage and hash the real file. Here we hash a
-    deterministic summary of the packet list as a stand-in "evidence
-    fingerprint" so the demo still produces a real, verifiable SHA-256.
+    In a real deployment, this function would save the actual
+    PCAP segment to local or cloud storage and calculate the
+    hash of that file.
+
+    For this demonstration, a deterministic summary of the
+    packet list is hashed to generate a verifiable SHA-256
+    evidence fingerprint.
     """
-    summary = json.dumps(packets, sort_keys=True, default=str).encode()
-    fingerprint = hashlib.sha256(summary).hexdigest()
+
+    packet_summary = json.dumps(
+        packets,
+        sort_keys=True,
+        default=str
+    ).encode()
+
+    evidence_hash = hashlib.sha256(packet_summary).hexdigest()
+
     return {
         "pcap_file": f"evidence/{alert_id}_capture.pcap",
-        "pcap_sha256": fingerprint,
+        "pcap_sha256": evidence_hash,
         "chain_of_custody_id": f"COC-{alert_id}",
         "captured_by": "NetGuard AutoForensicAgent v1.0",
     }
 
 
-def process_window(device: dict, packets: list, window_seconds: float, known_destinations: set = None):
+def process_traffic_window(
+    device: dict,
+    packets: list,
+    window_seconds: float,
+    known_destinations: set = None
+):
     """
-    Runs the full pipeline on one traffic window. Always logs the window;
-    only creates an alert + report data if the ML model flags it anomalous.
+    Executes the complete analysis pipeline for one traffic window.
 
-    Returns the alert_id if an alert was created, else None.
+    The traffic window is always recorded. An alert and its
+    associated report information are generated only when
+    the ML detector identifies the traffic as anomalous.
+
+    Returns the alert ID when an alert is generated.
+    Otherwise, returns None.
     """
-    detector = get_detector()
-    result = detector.score_window(packets, window_seconds, known_destinations)
+
+    detector = get_anomaly_detector()
+
+    analysis_result = detector.score_window(
+        packets,
+        window_seconds,
+        known_destinations
+    )
 
     alert_store.insert_traffic_log(
         device=device,
-        features=result["features"],
-        anomaly_score=result["anomaly_score"],
-        is_anomaly=result["is_anomaly"],
+        features=analysis_result["features"],
+        anomaly_score=analysis_result["anomaly_score"],
+        is_anomaly=analysis_result["is_anomaly"],
         window_seconds=window_seconds,
     )
 
-    if not result["is_anomaly"]:
+    if not analysis_result["is_anomaly"]:
         return None
 
-    alert_type = classify_attack_type(result["features"])
-    attack_info = _map_to_attack(alert_type)
-    severity_label, severity_score = _compute_severity(result["anomaly_score"], attack_info["severity_weight"])
+    detected_type = classify_attack_type(
+        analysis_result["features"]
+    )
 
-    # alert_id is generated inside insert_alert; build timeline/evidence with a
-    # temp reference first, then patch once we have the real ID.
-    timeline = _build_timeline(device, packets, alert_type)
+    attack_details = find_attack_information(
+        detected_type
+    )
+
+    severity_label, severity_score = calculate_severity(
+        analysis_result["anomaly_score"],
+        attack_details["severity_weight"]
+    )
+
+    # Create the timeline before generating the alert.
+    # The alert ID is generated by insert_alert().
+    timeline_data = create_timeline(
+        device,
+        packets,
+        detected_type
+    )
 
     alert_id = alert_store.insert_alert(
         device=device,
-        features=result["features"],
-        anomaly_score=result["anomaly_score"],
-        alert_type=alert_type,
-        attack_info=attack_info,
+        features=analysis_result["features"],
+        anomaly_score=analysis_result["anomaly_score"],
+        alert_type=detected_type,
+        attack_info=attack_details,
         severity_label=severity_label,
         severity_score=severity_score,
-        timeline=timeline,
-        evidence={},  # placeholder, patched below
+        timeline=timeline_data,
+        evidence={},
     )
 
-    evidence = _build_evidence(alert_id, packets)
-    alert_store._alerts.update_one({"alert_id": alert_id}, {"$set": {"evidence": evidence}})
+    evidence_data = generate_evidence(
+        alert_id,
+        packets
+    )
+
+    alert_store._alerts.update_one(
+        {"alert_id": alert_id},
+        {"$set": {"evidence": evidence_data}}
+    )
 
     return alert_id
 
 
-def run_batch(batch):
-    """
-    Runs process_window over a list of {"device", "packets", "window_seconds"}
-    entries (as produced by traffic/synthetic_generator.generate_demo_batch(),
-    traffic/pcap_reader.read_pcap_windows(), or traffic/live_capture.py).
+def process_batch(batch):
+    generated_alerts = []
 
-    Returns list of alert_ids created (skips windows that weren't anomalous).
-    """
-    created_alerts = []
-    for entry in batch:
-        alert_id = process_window(entry["device"], entry["packets"], entry["window_seconds"])
+    for item in batch:
+        alert_id = process_traffic_window(
+            item["device"],
+            item["packets"],
+            item["window_seconds"]
+        )
+
         if alert_id:
-            created_alerts.append(alert_id)
-    return created_alerts
+            generated_alerts.append(alert_id)
+
+    return generated_alerts
