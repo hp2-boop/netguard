@@ -120,11 +120,33 @@ def generate_c2_beacon_window(device: dict, window_start: float, window_seconds:
     return packets
 
 
+def generate_signature_attack_window(device: dict, window_start: float, window_seconds: float = 10.0) -> list:
+    """Generates traffic that will be instantly caught by the Signature IDS."""
+    packets = []
+    n_packets = random.randint(5, 10)
+    # 50% chance of known bad IP, 50% chance of known bad port
+    if random.random() > 0.5:
+        target_ip = random.choice(["198.51.100.33", "203.0.113.10"])
+        port = random.randint(1024, 65535)
+    else:
+        target_ip = f"{random.randint(1,223)}.{random.randint(0,255)}.{random.randint(0,255)}.{random.randint(1,254)}"
+        port = random.choice([4444, 6667])
+        
+    for i in range(n_packets):
+        t = window_start + random.uniform(0, window_seconds)
+        packets.append(_make_packet(
+            t, device["ip_address"], target_ip, port,
+            protocol="TCP", size=random.randint(100, 500), flags="PA",
+        ))
+    return packets
+
+
 ATTACK_GENERATORS = {
     "port_scan": generate_port_scan_window,
     "ddos_traffic": generate_ddos_window,
     "brute_force_login": generate_brute_force_window,
     "c2_communication": generate_c2_beacon_window,
+    "signature_attack": generate_signature_attack_window,
 }
 
 
