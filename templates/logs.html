@@ -27,8 +27,20 @@
     <tr class="{{ 'flagged-row' if log.is_anomaly else '' }}">
       <td class="mono small">{{ log.log_id }}</td>
       <td>{{ log.device.device_id }}</td>
-      <td class="mono">{{ "%.1f"|format(log.features.packet_rate) }}</td>
-      <td class="mono">{{ log.features.unique_dst_ips }}</td>
+      <td class="mono">
+        {% if log.features.packet_rate is defined %}
+          {{ "%.1f"|format(log.features.packet_rate) }}
+        {% else %}
+          N/A
+        {% endif %}
+      </td>
+      <td class="mono">
+        {% if log.features.unique_dst_ips is defined %}
+          {{ log.features.unique_dst_ips }}
+        {% else %}
+          N/A
+        {% endif %}
+      </td>
       <td class="mono">{{ log.anomaly_score }}</td>
       <td>{% if log.is_anomaly %}<span class="badge badge-high">YES</span>{% else %}<span class="badge badge-low">no</span>{% endif %}</td>
       <td class="mono small">{{ log.timestamp }}</td>
